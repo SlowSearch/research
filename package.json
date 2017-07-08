@@ -19,7 +19,7 @@
     "pretest": "rollup -c"
   },
   "dependencies": {
-    "porter-stemmer": "^0.9.1",
+    "porter-stemmer": "SlowSearch/porter-stemmer#e86373f",
     "stopwords": "^0.0.5"
   },
   "devDependencies": {

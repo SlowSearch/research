@@ -5,21 +5,33 @@
 <script src="../dist/slowsearch-v2.js"></script>
 <script src="enwiki-articles.js"></script>
 <script>
-function promiseMultipleAdd (slowsearch) {
+/* eslint-env browser es6 */
+/* global texts:false */
+/* eslint-disable no-console */
+var indexMap = new Map();
+function promiseMultipleAdd (slowsearch, count) {
+  count = count || 100;
   let promises = [];
   let lastFinish = Date.now();
-  for (let i = 0; i < 1000 && i < texts.length; i++) {
+  let storedIndex = indexMap.get(slowsearch) || 0;
+  for (let i = storedIndex; i < storedIndex + count && i < texts.length; i++) {
     promises.push(slowsearch.add({text: texts[i]}).then(event => {
       console.log('promise done for text', i, '; uniqueTerms: ', event.uniqueTerms, '; internal time (since promise create): ', event.time, '; relative time since last promise: ', (Date.now() - lastFinish) + ' ms', '; relative time per uniqueTerm: ', ((Date.now() - lastFinish) / event.uniqueTerms) + ' ms');
       lastFinish = Date.now();
     }));
     console.log('added promise for text ', i);
   }
+  indexMap.set(slowsearch, storedIndex + count);
   return Promise.all(promises);
 }
 function test(version) {
-  start = Date.now();
+  let start = Date.now();
   return promiseMultipleAdd(window['slowsearch_v' + version]).then(() => console.log('done with slowsearch v' + version, Date.now() - start));
+}
+function drop(version) {
+  let request = indexedDB.deleteDatabase('search-v' + version);
+  request.onsuccess = () => console.log('database v' + version + ' deleted');
+  request.onerror = (event) => console.log('database v' + version + ' delete error', event);
 }
 function createTestButton(text, func) {
   let btn = document.createElement('button');
@@ -27,7 +39,11 @@ function createTestButton(text, func) {
   btn.onclick = func;
   document.body.appendChild(btn);
 }
-createTestButton('Run v1', () => test(1));
-createTestButton('Run v2', () => test(2));
+createTestButton('Run v1 for 100 docs', () => test(1));
+createTestButton('Run v2 for 100 docs', () => test(2));
 //createTestButton('Run both', () => test(1).then(test(2)));
+document.body.appendChild(document.createElement('br'));
+createTestButton('Drop database v1', () => drop(1));
+createTestButton('Drop database v2', () => drop(2));
 </script>
+Open your console for output.<br>

@@ -1,8 +1,9 @@
-import {stemmer} from 'porter-stemmer';
+import {memoizingStemmer as stemmer} from 'porter-stemmer';
 import {english as stopwords} from 'stopwords';
 
 var db;
 var docCount;
+var stopSet;
 const dbName = 'search-v1';
 const dbStoreDocs = 'docs';
 const dbStoreIndex = 'index';
@@ -26,6 +27,15 @@ function dbOpen(name) {
       db.createObjectStore(dbStoreDocs, {autoIncrement: true});
     };
   });
+}
+
+function initStopSet() {
+  if (!stopSet) {
+    stopSet = new Set();
+    for (var i = stopwords.length - 1; i >= 0; i--) {
+      stopSet.add(stopwords[i]);
+    }
+  }
 }
 
 function dbAddDocRef(doc) {
@@ -152,7 +162,8 @@ export function add(doc) {
     // tokenize, apply stemmer & remove stopwords:
     var tokens = tokenize(doc.text);
     var terms = tokens.map(stemmer);
-    resolve(terms.filter(term => stopwords.indexOf(term) === -1));
+    initStopSet();
+    resolve(terms.filter(term => !stopSet.has(term)));
   })
   .then(terms => dbAddDocRef(doc)
     .then(docId => { return {docId: docId, terms: terms}; })

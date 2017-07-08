@@ -1,5 +1,6 @@
 <!doctype html>
 <meta charset=utf-8>
+<body>
 <script src="../dist/slowsearch-v1.js"></script>
 <script src="../dist/slowsearch-v2.js"></script>
 <script src="enwiki-articles.js"></script>
@@ -9,18 +10,24 @@ function promiseMultipleAdd (slowsearch) {
   let lastFinish = Date.now();
   for (let i = 0; i < 1000 && i < texts.length; i++) {
     promises.push(slowsearch.add({text: texts[i]}).then(event => {
-      console.log(new Date(), 'promise done for text', i, '; uniqueTerms: ', event.uniqueTerms, '; internal time (since promise create): ', event.time, '; relative time since last promise: ', (Date.now() - lastFinish) + ' ms', '; relative time per uniqueTerm: ', ((Date.now() - lastFinish) / event.uniqueTerms) + ' ms');
+      console.log('promise done for text', i, '; uniqueTerms: ', event.uniqueTerms, '; internal time (since promise create): ', event.time, '; relative time since last promise: ', (Date.now() - lastFinish) + ' ms', '; relative time per uniqueTerm: ', ((Date.now() - lastFinish) / event.uniqueTerms) + ' ms');
       lastFinish = Date.now();
     }));
-    console.log(new Date(), 'added promise for text ', i);
+    console.log('added promise for text ', i);
   }
   return Promise.all(promises);
 }
-let start = Date.now();
-console.log(new Date(), 'starting with slowsearch_v1');
-promiseMultipleAdd(slowsearch_v1).then(() => console.log(new Date(), 'done with slowsearch-v1', Date.now() - start)).then(() => {
+function test(version) {
   start = Date.now();
-  console.log(new Date(), 'starting with slowsearch_v2');
-  return promiseMultipleAdd(slowsearch_v2).then(() => console.log(new Date(), 'done with slowsearch-v2', Date.now() - start));
-});
+  return promiseMultipleAdd(window['slowsearch_v' + version]).then(() => console.log('done with slowsearch v' + version, Date.now() - start));
+}
+function createTestButton(text, func) {
+  let btn = document.createElement('button');
+  btn.textContent = text;
+  btn.onclick = func;
+  document.body.appendChild(btn);
+}
+createTestButton('Run v1', () => test(1));
+createTestButton('Run v2', () => test(2));
+//createTestButton('Run both', () => test(1).then(test(2)));
 </script>

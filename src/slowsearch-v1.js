@@ -54,38 +54,30 @@ function dbAddIndex(docId, terms, start) {
   return dbOpen(dbName)
   .then(() => {
     return new Promise((resolve, reject) => {
-      // sort terms:
-      terms.sort();
-      let wordCount = 0;
-      let unique = 0;
+      let uniqueTerms = new Map();
+      for (var i = 0; i < terms.length; i++) {
+        uniqueTerms.set(terms[i], (uniqueTerms.get(terms[i]) || 0) + 1);
+      }
       let transaction = db.transaction([dbStoreIndex], dbRW);
-      transaction.oncomplete = () => resolve({time: Date.now() - start, uniqueTerms: unique});
+      transaction.oncomplete = () => resolve({time: Date.now() - start, uniqueTerms: uniqueTerms.size});
       transaction.onerror = event => reject('transaction error when adding index', event);
       let store = transaction.objectStore(dbStoreIndex);
-      // loop one out of range, otherwise the last term won't be inserted
-      for (let i = 0; i <= terms.length; i++) {
-        if (i === 0 || terms[i] === terms[i - 1]) {
-          wordCount++;
-        } else {
-          unique++;
-          //NOTE: we are using the tf after removing the stopwords and ignoring them in the term count
-          // explaination by example:
-          // should a document with 'the the the the world' have a different tf than 'world'?
-          // at the moment, they will have the same tf for world
-          let term = terms[i - 1];
-          let request = store.get(term);
-          let tf = wordCount / terms.length;
-          request.onsuccess = event => {
-            if (event.target.result) {
-              event.target.result.push({id: docId.id, tf: tf});
-              store.put(event.target.result, term);
-            } else {
-              store.add([{id: docId, tf: tf}], term);
-            }
+      uniqueTerms.forEach((count, term) => {
+        //NOTE: we are using the tf after removing the stopwords and ignoring them in the term count
+        // explaination by example:
+        // should a document with 'the the the the world' have a different tf than 'world'?
+        // at the moment, they will have the same tf for world
+        let request = store.get(term);
+        let tf = count / terms.length;
+        request.onsuccess = event => {
+          if (event.target.result) {
+            event.target.result.push({id: docId.id, tf: tf});
+            store.put(event.target.result, term);
+          } else {
+            store.add([{id: docId, tf: tf}], term);
           }
-          wordCount = 1;
         }
-      }
+      });
     })
   });
 }

@@ -19,6 +19,7 @@
     "pretest": "rollup -c"
   },
   "dependencies": {
+    "idb": "^2.0.3",
     "porter-stemmer": "SlowSearch/porter-stemmer#e86373f",
     "stopwords": "^0.0.5"
   },

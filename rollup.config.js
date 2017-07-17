@@ -35,4 +35,13 @@ export default [{
     moduleName: 'slowsearch_v2',
     sourceMap: true
   }]
+}, {
+  entry: 'src/slowsearch-v3.js',
+  plugins: plugins,
+  targets: [{
+    dest: 'dist/slowsearch-v3.js',
+    format: 'umd',
+    moduleName: 'slowsearch_v3',
+    sourceMap: true
+  }]
 }];

@@ -211,7 +211,7 @@ async function addIndex(dbTransaction, termTransaction, docId, terms) {
     // explanation by example:
     // should a document with 'the the the the world' have a different tf than 'world'?
     // at the moment, they will have the same tf for world
-    await store.put(null, getKey(termTransaction.getIdAndIncreaseDf(term), getScaledBm15(count, terms.length), docId));
+    await store.put(null, getKey(await termTransaction.getIdAndIncreaseDf(term), getScaledBm15(count, terms.length), docId));
   }
   return uniqueTerms.size;
 }

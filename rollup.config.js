@@ -4,17 +4,19 @@ import commonjs from 'rollup-plugin-commonjs';
 import resolve from 'rollup-plugin-node-resolve';
 import eslint from 'rollup-plugin-eslint';
 
-let pkg = require('./package.json');
-let external = Object.keys(pkg.dependencies || {});
+//const pkg = require('./package.json');
+//const external = Object.keys(pkg.dependencies || {});
 
-let plugins = [
+const plugins = [
   eslint(),
   babel(babelrc()),
   resolve({
     jsnext: true,
-    main: true
+    main: true,
+    browser: true
   }),
   commonjs()
+ // commonjs({ namedExports: { '/idb.js': [ 'open' ] }})
 ];
 
 export default [{

@@ -1,6 +1,6 @@
 import {memoizingStemmer as stemmer} from 'porter-stemmer';
 import {english} from 'stopwords';
-import {idb} from 'idb';
+import {open as idbOpen} from 'idb';
 
 const stopwords = new Set(english);
 const dbName = 'search-v3';
@@ -12,16 +12,14 @@ const dbRW = 'readwrite';
 
 //TODO: recover from weird DB states, probably best to first make a delete/clear all method
 
-// 1: trie for terms with word count & index
-// 3: cursor over binary
-
+// is storing one tie for terms with word count & index faster / more space efficient?
 
 let _db;
-async function db(name) {
+async function db() {
   if (_db) {
     return _db;
   }
-  _db = await idb.open(name, 1, upgradedb => {
+  _db = await idbOpen(dbName, 1, upgradedb => {
     upgradedb.createObjectStore(dbStoreIndex, {autoIncrement: true});
     upgradedb.createObjectStore(dbStoreDocs, {autoIncrement: true});
     upgradedb.createObjectStore(dbStoreTerms);
@@ -34,89 +32,97 @@ async function addDocRef(transaction, doc) {
   return docId;
 }
 
-let termCache = {
-  
-  async function prefetchTermCache(transaction) {
-    await transaction.objectStore(dbStoreTerms).íterateCursor(cursor => {
+const termCache = (() => {
+  let cache = new Map();
+  let cacheEqualsObjectStore = false;
+  let inTransaction = false;
+
+  function transaction(dbTransaction) {
+    if (inTransaction) {
+      throw Error('Only one transaction can be open at the same time');
+    }
+    inTransaction = dbTransaction;
+    const inserts = new Set();
+    const queue = new Map();
+
+    async function getIdAndIncreaseDf(term) {
+      if (inTransaction !== dbTransaction) {
+        throw Error('Already committed/aborted transaction');
+      }
+      const termObj = await get(dbTransaction, term) || {id: await getTermCount(dbTransaction) + inserts.size, count: 0};
+      if (termObj.count === 0) {
+        inserts.add(term);
+      }
+      termObj.count++;
+      queue.set(term, termObj);
+      return termObj.id;
+    }
+
+    function abort() {
+      if (inTransaction !== dbTransaction) {
+        throw Error('Already committed/aborted transaction');
+      }
+      inTransaction = false;
+      inserts.clear();
+      queue.clear();
+    }
+
+    function commit() {
+      if (inTransaction !== dbTransaction) {
+        throw Error('Already committed/aborted transaction');
+      }
+      const newCache = new Map(cache);
+      const termStore = dbTransaction.objectStore(dbStoreTerms);
+      for(const [term, value] of queue) {
+        inserts.has(term) ? termStore.add(term, value) : termStore.put(term, value);
+      }
+      cache = newCache;
+      inTransaction = false;
+    }
+
+    return {
+      getIdAndIncreaseDf,
+      abort,
+      commit
+    };
+  }
+
+  async function get(dbTransaction, term) {
+    const value = cache.get(term);
+    if (value || cacheEqualsObjectStore) {
+      return value;
+    }
+    const dbValue = await dbTransaction.objectStore(dbStoreTerms).get(term);
+    cache.set(term, dbValue);
+    return dbValue;
+  }
+
+  async function prefill() {
+    // Since idb does not yet support await cursor, we have to use a separate transaction here
+    return (await db()).transaction([dbStoreTerms], dbRO).objectStore(dbStoreTerms).iterateCursor(cursor => {
       if (!cursor) {
         return;
       }
-      termIds.set(cursor.key, cursor.value);
+      cache.set(cursor.key, cursor.value);
       cursor.continue();
+    }).complete.then(() => {
+      cacheEqualsObjectStore = true;
     });
   }
-};
 
-async function getTermObj(transaction, term) {
-  let cache = termIds.get(term);
-  if (cache) {
-    return cache;
-  }
-  if 
-async function resolveTerm(transaction, term, batch, value, resolve) {
-  
-  value.count++;
-  if (batch) {
-    value.updated = true;
-  }
-  termIds.set(term, value);
-  resolve(value.id);
-  if (!batch) {
-    //ERROR /put/add
-    transaction.objectStore(dbStoreTerms).add(term, value);
-  }
-}
+  return {
+    get,
+    prefill,
+    transaction
+  };
+})();
 
+//const getScaledTf = (termCount, docSize) => Math.floor(Math.sqrt(termCount / docSize) * 255);
+//const bm25k1 = 1.2, bm25b = 0.75, bm25avg = 2000;
+//const bm25 = (termCount,docSize,avg) => Math.floor(255 * ((termCount / docSize) * (bm25k1 + 1)) / (termCount / docSize + bm25k1 *(1 - bm25b + bm25b * (docSize / bm25avg))));
 
-  //get term, (if not exist, return count & put new) else return id update idf
-  return new Promise(resolve => {
-    
-    if (!cache && (!batch || !batch.prefetched)) {
-      transaction.objectStore(dbStoreTerms).get(term).onsuccess = event => {
-        let value = event.target.result;
-        if (!value) {
-          dbGetTermCount(transaction).then(termCount => {
-            value = {id: termCount++, count: 0};
-            resolveTerm(transaction, term, batch, value, resolve);
-          });
-        } else {
-          resolveTerm(transaction, term, batch, value, resolve);
-        }
-      };      
-    } else if (!cache) {
-      dbGetTermCount(transaction).then(termCount => {
-        let value = {id: termCount++, count: 0};
-        resolveTerm(transaction, term, batch, value, resolve);
-      });
-    } else {
-      let value = cache;
-      resolveTerm(transaction, term, batch, value, resolve);
-    }
-  });
-}
-
-function getTerm(transaction, term) {
-  //get term, (if not exist, return count & put new) else return id update idf
-  return new Promise(resolve => {
-    let cache = termIds.get(term);
-    if (!cache) {
-      transaction.objectStore(dbStoreTerms).get(term).onsuccess = event => {
-        let value = event.target.result;
-        resolve(value);
-        termIds.set(term, value);
-      };      
-    } else {
-      resolve(cache);
-    }
-  });
-}
-
-//var getScaledTf = (termCount, docSize) => Math.floor(Math.sqrt(termCount / docSize) * 255);
-//let bm25k1 = 1.2, bm25b = 0.75, bm25avg = 2000;
-//var bm25 = (termCount,docSize,avg) => Math.floor(255 * ((termCount / docSize) * (bm25k1 + 1)) / (termCount / docSize + bm25k1 *(1 - bm25b + bm25b * (docSize / bm25avg))));
-
-let bm15k1 = 1.2;//, bm15b = 0.75;
-var getScaledBm15 = (termCount, docSize) => Math.floor(255 * ((termCount / docSize) * (bm15k1 + 1)) / (termCount / docSize + bm15k1));
+const bm15k1 = 1.2;//, bm15b = 0.75;
+const getScaledBm15 = (termCount, docSize) => Math.floor(255 * ((termCount / docSize) * (bm15k1 + 1)) / (termCount / docSize + bm15k1));
 
 //NOTE:
 // We are using a Number (float64) for key storage, because this is the most efficient way in FireFox
@@ -154,8 +160,9 @@ var getScaledBm15 = (termCount, docSize) => Math.floor(255 * ((termCount / docSi
 // we can change this limit to 1 << 24 (16M+) again.
 
 
+// Fetch a tf and docId as object from a key (Number)
 function getTfDocId(key) {
-  let dv = new DataView(new ArrayBuffer(8));
+  const dv = new DataView(new ArrayBuffer(8));
   dv.setFloat64(0, key);
   return {
     tf: dv.getUint8(3),
@@ -163,49 +170,49 @@ function getTfDocId(key) {
   };
 }
 
+// Create a key (Number) from a termId, tf and docId
 function getKey(termId, tf, docId) {
-  let dv = new DataView(new ArrayBuffer(8));
+  const dv = new DataView(new ArrayBuffer(8));
   if (termId < 0 || tf < 0 || docId < 0 || termId >= 1 << 23 || tf >= 1 << 8 || docId >= (1 << 30) * 4) {
-    return NaN;
+    throw Error('getKey out of bounds');
   }
   dv.setUint32(0, termId << 8 | tf);
   dv.setUint32(4, docId);
   return dv.getFloat64(0);
 }
 
+// Return the KeyRange inclusive bounds to include all termId records
 function getBounds(termId) {
-  let dv = new DataView(new ArrayBuffer(8));
+  const dv = new DataView(new ArrayBuffer(8));
   if (termId < 0 || termId >= 1 << 23) {
-    return NaN;
+    throw Error('getBounds out of bounds');
   }
   dv.setUint32(0, termId << 8);
   dv.setUint32(4, 0);
-  let lower = dv.getFloat64(0);
+  const lower = dv.getFloat64(0);
 
   dv.setUint32(0, termId << 8 | 0xFF);
   dv.setUint32(4, 0xFFFFFFFF);
 
-  let upper = dv.getFloat64(0);
+  const upper = dv.getFloat64(0);
   return IDBKeyRange.bounds(lower, upper, true, true);
 }
 
 
-function dbAddIndex(transaction, docId, terms, start, batch) {
-  return new Promise(resolve => {
-    let uniqueTerms = new Map();
-    for (let i = 0; i < terms.length; i++) {
-      uniqueTerms.set(terms[i], (uniqueTerms.get(terms[i]) || 0) + 1);
-    }
-    const store = transaction.objectStore(dbStoreIndex);
-    uniqueTerms.forEach((count, term) => {
-      //NOTE: we are using the tf after removing the stop words and ignoring them in the term count
-      // explanation by example:
-      // should a document with 'the the the the world' have a different tf than 'world'?
-      // at the moment, they will have the same tf for world
-      store.put(null, getKey(getTermIdAndIncreaseDf(transaction, term, batch), getScaledBm15(count, terms.length), docId));
-    });
-    resolve({time: Date.now() - start, uniqueTerms: uniqueTerms.size});
-  });
+function addIndex(dbTransaction, termTransaction, docId, terms) {
+  const uniqueTerms = new Map();
+  for (let i = 0; i < terms.length; i++) {
+    uniqueTerms.set(terms[i], (uniqueTerms.get(terms[i]) || 0) + 1);
+  }
+  const store = dbTransaction.objectStore(dbStoreIndex);
+  for(const [term, count] of uniqueTerms) {
+    //NOTE: we are using the tf after removing the stop words and ignoring them in the term count
+    // explanation by example:
+    // should a document with 'the the the the world' have a different tf than 'world'?
+    // at the moment, they will have the same tf for world
+    store.put(null, getKey(termTransaction.getIdAndIncreaseDf(term), getScaledBm15(count, terms.length), docId));
+  }
+  return uniqueTerms.size;
 }
 
 // If documentsWithTerm = 0 then the result will be Infinity
@@ -213,69 +220,43 @@ function idf(documentCount, documentsWithTerm) {
   return Math.log(documentCount / documentsWithTerm);
 }
 
-function dbGetDocCount(transaction) {
-  return new Promise(resolve => {
-    if (docCount) {
-      return resolve(docCount);
-    }
-    let request = transaction.objectStore(dbStoreDocs).count();
-    request.onsuccess = event => {
-      docCount = event.target.result;
-      resolve(docCount);
-    };
-  });
+async function getDocCount(transaction) {
+  const count = await transaction.objectStore(dbStoreDocs).count();
+  return count;
 }
 
-function dbGetTermCount(transaction) {
-  return new Promise(resolve => {
-    if (termCount) {
-      return resolve(termCount);
-    }
-    let request = transaction.objectStore(dbStoreTerms).count();
-    request.onsuccess = event => {
-      termCount = event.target.result;
-      resolve(termCount);
-    };
-  });
+async function getTermCount(transaction) {
+ const count = await transaction.objectStore(dbStoreTerms).count();
+ return count;
 }
 
-function dbQuery(term, limit, start) {
-  return dbOpen(dbName)
-  .then((db) => {
-    return new Promise((resolve, reject) => {
-      let results = [];
-      let transaction = db.transaction([dbStoreIndex, dbStoreDocs, dbStoreTerms], dbRO);
-      transaction.onerror = event => reject('transaction error when reading index', event);
-      getTerm(transaction, term).then(termObj => {
-        if (!termObj) {
-          return {idf: 0, total: results.length, results: results, time: Date.now() - start};
-        }
-        // Since large tf's are stored as high numbers, we can only early stop when we walk in reverse (prev) order.
-        let request = transaction.objectStore(dbStoreIndex).openCursor(getBounds(termObj.id), 'prev');
-        request.onsuccess = event => {
-          let cursor = event.target.result;
-          if (cursor && results.length < (limit || 10)) {
-            results.push(getTfDocId(cursor.key));
-            cursor.continue();
-          } else {
-            dbGetDocCount(transaction)
-            .then(() => resolve({
-              idf: idf(docCount, termObj.count),
-              total: termObj.count,
-              results: results,
-              time: Date.now() - start
-            }))
-            .catch(event => reject(event));
-          }
-        };
-      });
-    });
-  });
+async function query(term, limit) {
+  const documents = [];
+  const transaction = (await db()).transaction([dbStoreIndex, dbStoreDocs, dbStoreTerms], dbRO);
+  const termObj = await termCache.get(transaction, term);
+  if (!termObj) {
+    return {idf: 0, total: 0, documents};
+  }
+  const docCount = await getDocCount(transaction);
+  // Since large tf's are stored as high numbers, we can only early stop when we walk in reverse (prev) order.
+  let result;
+  return transaction.objectStore(dbStoreIndex).iterateCursor(getBounds(termObj.id), 'prev', cursor => {
+    if (cursor && documents.length < (limit || 10)) {
+      documents.push(getTfDocId(cursor.key));
+      cursor.continue();
+    } else {
+      result = {
+        idf: idf(docCount, termObj.count),
+        total: termObj.count,
+        documents
+      };
+    }
+  }).complete.then(() => result);
 }
 
 function tokenize(text) {
   // NOTE: since our stop words have the ' (single quote) removed, remove it here too for now
-  let tokens = text.toLowerCase().replace(/'/g, '').split(/[^\w'-]+/);
+  const tokens = text.toLowerCase().replace(/'/g, '').split(/[^\w'-]+/);
   // remove last token if it is empty, this can happen if the string ends with a non-word.
   if (tokens[tokens.length - 1].length === 0) {
     tokens.pop();
@@ -283,67 +264,57 @@ function tokenize(text) {
   return tokens;
 }
 
-export function batchAdd(texts, prefetch) {
-  return dbOpen(dbName)
-  .then((db) => {
-    return new Promise((resolve, reject) => {
-      let transaction = db.transaction([dbStoreIndex, dbStoreDocs, dbStoreTerms], dbRW);
-      transaction.onerror = event => reject('transaction error', event);
-      let batch = true;
-      if (prefetch) {
-        dbPrefetchTermCache(transaction);
-        batch = {prefetched: true};
-      }
-      let promises = [];
-      for (let i = 0; i < texts.length; i++) {
-        promises.push(add(texts[i], transaction, batch));
-      }
-      return Promise.all(promises);
-    });
-  });
+export async function batchAdd(texts, prefill) {
+  const dbTransaction = (await db()).transaction([dbStoreIndex, dbStoreDocs, dbStoreTerms], dbRW);
+  const termTransaction = termCache.transaction(dbTransaction);
+  if (prefill) {
+    termCache.prefill();
+  }
+  const promises = [];
+  for (let i = 0; i < texts.length; i++) {
+    promises.push(add(texts[i], dbTransaction, termTransaction));
+  }
+  await Promise.all(promises);
+  termTransaction.commit();
+  await dbTransaction.complete;
 }
 
 // Can add a document with {text: string, [id: Number]}, where id should be unique
-export function add(doc, transaction, batch) {
-  const start = Date.now();
-  return dbOpen(dbName)
-  .then(() => {
-    return new Promise((resolve, reject) => {
-      if (!doc.text || typeof doc.text !== 'string') {
-        return reject('please include a text string');
-      }
-      if (!transaction) {
-        transaction = db.transaction([dbStoreIndex, dbStoreDocs, dbStoreTerms], dbRW);
-      }
-      // tokenize, apply stemmer & remove stopwords:
-      const tokens = tokenize(doc.text);
-      const terms = tokens.map(stemmer);
-      resolve(terms.filter(term => !stopwords.has(term)));
-    })
-    .then(terms => dbAddDocRef(transaction, doc)
-      .then(docId => { return {docId: docId, terms: terms}; })
-    )
-    .then(tuple => dbAddIndex(transaction, tuple.docId, tuple.terms, start, batch));
-  });
+export async function add(doc, dbTransaction, termTransaction) {
+  if (!doc.text || typeof doc.text !== 'string') {
+    throw Error('Please include a text string');
+  }
+  let autoCommit = true;
+  if (!dbTransaction) {
+    dbTransaction = (await db()).transaction([dbStoreIndex, dbStoreDocs, dbStoreTerms], dbRW);
+  }
+  if (!termTransaction) {
+    termTransaction = termTransaction.transaction();
+  } else {
+    autoCommit = false;
+  }
+  // tokenize, apply stemmer & remove stop words:
+  const terms = tokenize(doc.text).map(stemmer).filter(term => !stopwords.has(term));
+  const docId = await addDocRef(dbTransaction, doc);
+  const uniqueTermCount = await addIndex(dbTransaction, termTransaction, docId, terms);
+  if (autoCommit) {
+    termTransaction.commit();
+  }
+  return uniqueTermCount;
 }
 
-export function searchSingleWord(word, limit) {
-  let start = Date.now();
-  return new Promise((resolve, reject) => {
-    if (typeof word !== 'string') {
-      return reject('please provide one word as a string');
-    }
-    // tokenize, apply stemmer & remove stopwords:
-    var tokens = tokenize(word);
-    if (tokens.length !== 1) {
-      return reject('this function only allows for a single word search, tokens found = ' + tokens.length);
-    }
-    var terms = tokens.map(stemmer);
-    terms = terms.filter(term => !stopwords.has(term));
-    if (terms.length !== 1) {
-      return reject('the search word was a stopword');
-    }
-    resolve(terms[0]);
-  })
-  .then(term => dbQuery(term, limit, start));
+export async function searchSingleWord(word, limit) {
+  if (typeof word !== 'string') {
+    throw Error('Please provide one word as a string');
+  }
+  // tokenize, apply stemmer & remove stop words:
+  const tokens = tokenize(word);
+  if (tokens.length !== 1) {
+    throw Error('searchSingleWord only allows for a single word search, tokens found: ["' + tokens.join('", "') + '"]');
+  }
+  const terms = tokens.map(stemmer).filter(term => !stopwords.has(term));
+  if (terms.length !== 1) {
+    throw Error('the search word was a stop word');
+  }
+  return await query(terms[0], limit);
 }

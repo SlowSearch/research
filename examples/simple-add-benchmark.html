@@ -34,7 +34,7 @@ function test(version) {
     for (let i = 0; i < 100 && i < texts.length; i++) {
       documents.push({text: texts[i]});
     }
-    return window.slowsearch_v3.batchAdd(documents, true).then(() => console.log('done with slowsearch v' + version, Date.now() - start));;
+    return window.slowsearch_v3.batchAdd(documents, false).then(() => console.log('done with slowsearch v' + version, Date.now() - start));;
   }
 }
 function drop(version) {
@@ -55,6 +55,6 @@ createTestButton('Run v3 for 100 docs', () => test(3));
 document.body.appendChild(document.createElement('br'));
 createTestButton('Drop database v1', () => drop(1));
 createTestButton('Drop database v2', () => drop(2));
-createTestButton('Drop database v3', () => drop(2));
+createTestButton('Drop database v3', () => drop(3));
 </script>
 Open your console for output.<br>

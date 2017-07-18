@@ -67,17 +67,18 @@ const termCache = (() => {
       queue.clear();
     }
 
-    function commit() {
+    async function commit() {
       if (inTransaction !== dbTransaction) {
         throw Error('Already committed/aborted transaction');
       }
       const newCache = new Map(cache);
-      const termStore = dbTransaction.objectStore(dbStoreTerms);
+      const store = dbTransaction.objectStore(dbStoreTerms);
       for(const [term, value] of queue) {
-        inserts.has(term) ? termStore.add(term, value) : termStore.put(term, value);
+        inserts.has(term) ? await store.add(value, term) : await store.put(value, term);
       }
       cache = newCache;
       inTransaction = false;
+      return dbTransaction.complete;
     }
 
     return {
@@ -174,18 +175,18 @@ function getTfDocId(key) {
 function getKey(termId, tf, docId) {
   const dv = new DataView(new ArrayBuffer(8));
   if (termId < 0 || tf < 0 || docId < 0 || termId >= 1 << 23 || tf >= 1 << 8 || docId >= (1 << 30) * 4) {
-    throw Error('getKey out of bounds');
+    throw Error('getKey out of bound');
   }
   dv.setUint32(0, termId << 8 | tf);
   dv.setUint32(4, docId);
   return dv.getFloat64(0);
 }
 
-// Return the KeyRange inclusive bounds to include all termId records
-function getBounds(termId) {
+// Return the KeyRange inclusive bound to include all termId records
+function getBound(termId) {
   const dv = new DataView(new ArrayBuffer(8));
   if (termId < 0 || termId >= 1 << 23) {
-    throw Error('getBounds out of bounds');
+    throw Error('getBounds out of bound');
   }
   dv.setUint32(0, termId << 8);
   dv.setUint32(4, 0);
@@ -195,11 +196,11 @@ function getBounds(termId) {
   dv.setUint32(4, 0xFFFFFFFF);
 
   const upper = dv.getFloat64(0);
-  return IDBKeyRange.bounds(lower, upper, true, true);
+  return IDBKeyRange.bound(lower, upper, true, true);
 }
 
 
-function addIndex(dbTransaction, termTransaction, docId, terms) {
+async function addIndex(dbTransaction, termTransaction, docId, terms) {
   const uniqueTerms = new Map();
   for (let i = 0; i < terms.length; i++) {
     uniqueTerms.set(terms[i], (uniqueTerms.get(terms[i]) || 0) + 1);
@@ -210,7 +211,7 @@ function addIndex(dbTransaction, termTransaction, docId, terms) {
     // explanation by example:
     // should a document with 'the the the the world' have a different tf than 'world'?
     // at the moment, they will have the same tf for world
-    store.put(null, getKey(termTransaction.getIdAndIncreaseDf(term), getScaledBm15(count, terms.length), docId));
+    await store.put(null, getKey(termTransaction.getIdAndIncreaseDf(term), getScaledBm15(count, terms.length), docId));
   }
   return uniqueTerms.size;
 }
@@ -240,7 +241,7 @@ async function query(term, limit) {
   const docCount = await getDocCount(transaction);
   // Since large tf's are stored as high numbers, we can only early stop when we walk in reverse (prev) order.
   let result;
-  return transaction.objectStore(dbStoreIndex).iterateCursor(getBounds(termObj.id), 'prev', cursor => {
+  transaction.objectStore(dbStoreIndex).iterateCursor(getBound(termObj.id), 'prev', cursor => {
     if (cursor && documents.length < (limit || 10)) {
       documents.push(getTfDocId(cursor.key));
       cursor.continue();
@@ -251,7 +252,8 @@ async function query(term, limit) {
         documents
       };
     }
-  }).complete.then(() => result);
+  });
+  return transaction.complete.then(() => result);
 }
 
 function tokenize(text) {
@@ -275,8 +277,7 @@ export async function batchAdd(texts, prefill) {
     promises.push(add(texts[i], dbTransaction, termTransaction));
   }
   await Promise.all(promises);
-  termTransaction.commit();
-  await dbTransaction.complete;
+  return termTransaction.commit();
 }
 
 // Can add a document with {text: string, [id: Number]}, where id should be unique
@@ -289,7 +290,7 @@ export async function add(doc, dbTransaction, termTransaction) {
     dbTransaction = (await db()).transaction([dbStoreIndex, dbStoreDocs, dbStoreTerms], dbRW);
   }
   if (!termTransaction) {
-    termTransaction = termTransaction.transaction();
+    termTransaction = termCache.transaction(dbTransaction);
   } else {
     autoCommit = false;
   }
@@ -298,7 +299,7 @@ export async function add(doc, dbTransaction, termTransaction) {
   const docId = await addDocRef(dbTransaction, doc);
   const uniqueTermCount = await addIndex(dbTransaction, termTransaction, docId, terms);
   if (autoCommit) {
-    termTransaction.commit();
+    return termTransaction.commit().then(() => uniqueTermCount);
   }
   return uniqueTermCount;
 }

@@ -9,52 +9,60 @@
 /* eslint-env browser es6 */
 /* global texts:false */
 /* eslint-disable no-console */
-var indexMap = new Map();
-function promiseMultipleAdd (slowsearch, count) {
-  count = count || 100;
-  let promises = [];
-  let lastFinish = Date.now();
-  let storedIndex = indexMap.get(slowsearch) || 0;
-  for (let i = storedIndex; i < storedIndex + count && i < texts.length; i++) {
-    promises.push(slowsearch.add({text: texts[i]}).then(event => {
-      console.log('promise done for text', i, '; uniqueTerms: ', event.uniqueTerms, '; internal time (since promise create): ', event.time, '; relative time since last promise: ', (Date.now() - lastFinish) + ' ms', '; relative time per uniqueTerm: ', ((Date.now() - lastFinish) / event.uniqueTerms) + ' ms');
-      lastFinish = Date.now();
-    }));
-    console.log('added promise for text ', i);
-  }
-  indexMap.set(slowsearch, storedIndex + count);
-  return Promise.all(promises);
-}
-function test(version) {
-  let start = Date.now();
-  if (version < 3) {
-    return promiseMultipleAdd(window['slowsearch_v' + version]).then(() => console.log('done with slowsearch v' + version, Date.now() - start));
-  } else {
-    let documents = [];
-    for (let i = 0; i < 100 && i < texts.length; i++) {
+const indexMap = new Map();
+const timingMap = new Map();
+function test(version, count) {
+  count = count || 10;
+  const start = Date.now();
+  const searchFunc = window['slowsearch_v' + version];
+  const promises = [];
+  //let lastFinish = Date.now();
+  const storedIndex = indexMap.get(version) || 0;
+  if (version === 3) {
+    const documents = [];
+    for (let i = storedIndex; i < storedIndex + count && i < texts.length; i++) {
       documents.push({text: texts[i]});
     }
-    return window.slowsearch_v3.batchAdd(documents, false).then(() => console.log('done with slowsearch v' + version, Date.now() - start));;
+    promises.push(searchFunc.batchAdd(documents, true));
+  } else {
+    for (let i = storedIndex; i < storedIndex + count && i < texts.length; i++) {
+      promises.push(searchFunc.add({text: texts[i]}));
+    //.then(event => {
+      //console.log('promise done for text', i, '; uniqueTerms: ', event.uniqueTerms, '; internal time (since promise create): ', event.time, '; relative time since last promise: ', (Date.now() - lastFinish) + ' ms', '; relative time per uniqueTerm: ', ((Date.now() - lastFinish) / event.uniqueTerms) + ' ms');
+      //lastFinish = Date.now();
+    //}));
+    //console.log('added promise for text ', i);
+    }
   }
+  indexMap.set(version, storedIndex + count);
+  return Promise.all(promises).then(() => {
+    const duration = Date.now() - start;
+    const timings = (timingMap.get(version) || []);
+    timings.push(duration);
+    timingMap.set(version, timings);
+    console.log('done with slowsearch v' + version, duration);
+  });
 }
+
 function drop(version) {
-  let request = indexedDB.deleteDatabase('search-v' + version);
+  const request = indexedDB.deleteDatabase('search-v' + version);
   request.onsuccess = () => console.log('database v' + version + ' deleted');
   request.onerror = (event) => console.log('database v' + version + ' delete error', event);
 }
 function createTestButton(text, func) {
-  let btn = document.createElement('button');
+  const btn = document.createElement('button');
   btn.textContent = text;
   btn.onclick = func;
   document.body.appendChild(btn);
 }
-createTestButton('Run v1 for 100 docs', () => test(1));
-createTestButton('Run v2 for 100 docs', () => test(2));
-createTestButton('Run v3 for 100 docs', () => test(3));
+createTestButton('Run v1 for 10 docs', () => test(1));
+createTestButton('Run v2 for 10 docs', () => test(2));
+createTestButton('Run v3 for 10 docs', () => test(3));
 //createTestButton('Run both', () => test(1).then(test(2)));
 document.body.appendChild(document.createElement('br'));
 createTestButton('Drop database v1', () => drop(1));
 createTestButton('Drop database v2', () => drop(2));
 createTestButton('Drop database v3', () => drop(3));
 </script>
+<br>
 Open your console for output.<br>

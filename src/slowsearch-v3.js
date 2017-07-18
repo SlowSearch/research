@@ -35,86 +35,71 @@ async function addDocRef(transaction, doc) {
 const termCache = (() => {
   let cache = new Map();
   let cacheEqualsObjectStore = false;
-  let inTransaction = false;
+  const inserts = new Set();
+  const queue = new Map();
 
-  function transaction(dbTransaction) {
-    if (inTransaction) {
-      throw Error('Only one transaction can be open at the same time');
+  async function getIdAndIncreaseDf(transaction, term) {
+    const termObj = queue.get(term) || await get(transaction, term) || {id: inserts.size + await getTermCount(transaction), count: 0};
+    if (termObj.count === 0) {
+      inserts.add(term);
     }
-    inTransaction = dbTransaction;
-    const inserts = new Set();
-    const queue = new Map();
-
-    async function getIdAndIncreaseDf(term) {
-      if (inTransaction !== dbTransaction) {
-        throw Error('Already committed/aborted transaction');
-      }
-      const termObj = await get(dbTransaction, term) || {id: await getTermCount(dbTransaction) + inserts.size, count: 0};
-      if (termObj.count === 0) {
-        inserts.add(term);
-      }
-      termObj.count++;
-      queue.set(term, termObj);
-      return termObj.id;
-    }
-
-    function abort() {
-      if (inTransaction !== dbTransaction) {
-        throw Error('Already committed/aborted transaction');
-      }
-      inTransaction = false;
-      inserts.clear();
-      queue.clear();
-    }
-
-    async function commit() {
-      if (inTransaction !== dbTransaction) {
-        throw Error('Already committed/aborted transaction');
-      }
-      const newCache = new Map(cache);
-      const store = dbTransaction.objectStore(dbStoreTerms);
-      for(const [term, value] of queue) {
-        inserts.has(term) ? await store.add(value, term) : await store.put(value, term);
-      }
-      cache = newCache;
-      inTransaction = false;
-      return dbTransaction.complete;
-    }
-
-    return {
-      getIdAndIncreaseDf,
-      abort,
-      commit
-    };
+    termObj.count++;
+    queue.set(term, termObj);
+    return termObj.id;
   }
 
-  async function get(dbTransaction, term) {
+  function discardUpdates() {
+    inserts.clear();
+    queue.clear();
+  }
+
+  async function storeUpdatesToDB(transaction) {
+    const newCache = new Map(cache);
+    const store = transaction.objectStore(dbStoreTerms);
+    const requests = [];
+    for(const [term, value] of queue) {
+      requests.push(inserts.has(term) ? store.add(value, term) : store.put(value, term));
+      newCache.set(term, value);
+    }
+    await Promise.all(requests);
+    cache = newCache;
+    inserts.clear();
+    queue.clear();
+  }
+
+  async function get(transaction, term) {
     const value = cache.get(term);
     if (value || cacheEqualsObjectStore) {
       return value;
     }
-    const dbValue = await dbTransaction.objectStore(dbStoreTerms).get(term);
+    const dbValue = await transaction.objectStore(dbStoreTerms).get(term);
     cache.set(term, dbValue);
     return dbValue;
   }
 
-  async function prefill() {
-    // Since idb does not yet support await cursor, we have to use a separate transaction here
-    return (await db()).transaction([dbStoreTerms], dbRO).objectStore(dbStoreTerms).iterateCursor(cursor => {
-      if (!cursor) {
-        return;
+  function prefill(transaction) {
+    // Since idb does not yet support await cursor, we have to use a promise here
+    return new Promise(resolve => {
+      if (cacheEqualsObjectStore) {
+        return resolve();
       }
-      cache.set(cursor.key, cursor.value);
-      cursor.continue();
-    }).complete.then(() => {
-      cacheEqualsObjectStore = true;
+      transaction.objectStore(dbStoreTerms).iterateCursor(cursor => {
+        if (!cursor) {
+          cacheEqualsObjectStore = true;
+          return resolve();
+        }
+        cache.set(cursor.key, cursor.value);
+        cursor.continue();
+      })
     });
   }
 
   return {
     get,
-    prefill,
-    transaction
+    getIdAndIncreaseDf,
+    discardUpdates,
+    storeUpdatesToDB,
+    prefill
   };
 })();
 
@@ -186,7 +171,7 @@ function getKey(termId, tf, docId) {
 function getBound(termId) {
   const dv = new DataView(new ArrayBuffer(8));
   if (termId < 0 || termId >= 1 << 23) {
-    throw Error('getBounds out of bound');
+    throw Error('getBound out of bound');
   }
   dv.setUint32(0, termId << 8);
   dv.setUint32(4, 0);
@@ -199,20 +184,21 @@ function getBound(termId) {
   return IDBKeyRange.bound(lower, upper, true, true);
 }
 
-
-async function addIndex(dbTransaction, termTransaction, docId, terms) {
+async function addIndex(transaction, docId, terms) {
   const uniqueTerms = new Map();
   for (let i = 0; i < terms.length; i++) {
     uniqueTerms.set(terms[i], (uniqueTerms.get(terms[i]) || 0) + 1);
   }
-  const store = dbTransaction.objectStore(dbStoreIndex);
+  const store = transaction.objectStore(dbStoreIndex);
+  const requests = [];
   for(const [term, count] of uniqueTerms) {
     //NOTE: we are using the tf after removing the stop words and ignoring them in the term count
     // explanation by example:
     // should a document with 'the the the the world' have a different tf than 'world'?
     // at the moment, they will have the same tf for world
-    await store.put(null, getKey(await termTransaction.getIdAndIncreaseDf(term), getScaledBm15(count, terms.length), docId));
+    requests.push(store.put(null, getKey(await termCache.getIdAndIncreaseDf(transaction, term), getScaledBm15(count, terms.length), docId)));
   }
+  await Promise.all(requests);
   return uniqueTerms.size;
 }
 
@@ -267,39 +253,31 @@ function tokenize(text) {
 }
 
 export async function batchAdd(texts, prefill) {
-  const dbTransaction = (await db()).transaction([dbStoreIndex, dbStoreDocs, dbStoreTerms], dbRW);
-  const termTransaction = termCache.transaction(dbTransaction);
+  const transaction = (await db()).transaction([dbStoreIndex, dbStoreDocs, dbStoreTerms], dbRW);
   if (prefill) {
-    termCache.prefill();
+    termCache.prefill(transaction);
   }
-  const promises = [];
   for (let i = 0; i < texts.length; i++) {
-    promises.push(add(texts[i], dbTransaction, termTransaction));
+    await add(texts[i], transaction);
   }
-  await Promise.all(promises);
-  return termTransaction.commit();
+  await termCache.storeUpdatesToDB(transaction);
 }
 
 // Can add a document with {text: string, [id: Number]}, where id should be unique
-export async function add(doc, dbTransaction, termTransaction) {
+export async function add(doc, transaction) {
   if (!doc.text || typeof doc.text !== 'string') {
     throw Error('Please include a text string');
   }
-  let autoCommit = true;
-  if (!dbTransaction) {
-    dbTransaction = (await db()).transaction([dbStoreIndex, dbStoreDocs, dbStoreTerms], dbRW);
-  }
-  if (!termTransaction) {
-    termTransaction = termCache.transaction(dbTransaction);
-  } else {
-    autoCommit = false;
+  const batch = transaction !== undefined;
+  if (!transaction) {
+    transaction = (await db()).transaction([dbStoreIndex, dbStoreDocs, dbStoreTerms], dbRW);
   }
   // tokenize, apply stemmer & remove stop words:
   const terms = tokenize(doc.text).map(stemmer).filter(term => !stopwords.has(term));
-  const docId = await addDocRef(dbTransaction, doc);
-  const uniqueTermCount = await addIndex(dbTransaction, termTransaction, docId, terms);
-  if (autoCommit) {
-    return termTransaction.commit().then(() => uniqueTermCount);
+  const docId = await addDocRef(transaction, doc);
+  const uniqueTermCount = await addIndex(transaction, docId, terms);
+  if (!batch) {
+    return termCache.storeUpdatesToDB(transaction).then(() => uniqueTermCount);
   }
   return uniqueTermCount;
 }

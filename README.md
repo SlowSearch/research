@@ -56,6 +56,7 @@ Con:
 Pro:
 * Trade of between storage and insert speed: only one record per term docId pair with terms being efficiently stored as just 3 bytes.
 * Possibility of early stopping, because the index is sorted
+
 Con:
 * Complex model
 

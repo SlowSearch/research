@@ -22,7 +22,7 @@ We use a basic document store, which is not needed.
 |:-----|:----------------------|:---------------------------|
 | docs | autoIncrement: Number | {meta information}: Object |
 
-## v1 model
+## Data model 1
 
 | name  | key  | value                                            |
 |:------|:-----|:-------------------------------------------------|
@@ -34,7 +34,7 @@ Pro:
 Con:
 * insertion speed
 
-## v2 model
+## Data model 2
 
 | name  | key                   | value                                              |
 |:------|:----------------------|:---------------------------------------------------|
@@ -46,7 +46,7 @@ Pro:
 
 Con:
 
-## v3 model
+## Data model 3
 
 | name  | key                                                            | value                               |
 |:------|:---------------------------------------------------------------|:------------------------------------|
@@ -61,9 +61,17 @@ Con:
 
 # Code
 
-v1: pure Promise
-v2: pure Promise
-v3: async/await + idb wrapper (which is Promise based)
-v4: async/await + Promise (idb adds promises for our inserts that we don't care about, since we already have the transaction promise)
-v5: pure Promises (removes async/await)
-v6: [broken] callbacks
+| Name | Data Model | Promises                            |
+|:-----|:-----------|:------------------------------------|
+| v1   | 1          | pure Promise                        |
+| v2   | 2          | pure Promise                        |
+| v3   | 3          | async/await + `idb` (Promise based) |
+| v4   | 3          | async/await + Promise               |
+| v5   | 3          | pure Promises (removes async/await) |
+| v6   | 3          | [broken] callbacks                  |
+
+# Other performance notes
+
+The `idb` library adds promises for our store put/add (update and inserts) that we don't care about, since we already have the transaction oncomplete.
+
+Replacing native Promise with the `es6-promise` implementation seems to give quite a performance boost.

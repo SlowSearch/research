@@ -1,9 +1,12 @@
 <!doctype html>
 <meta charset=utf-8>
 <body>
-<script src="../dist/slowsearch-v1.js"></script>
+<!--script src="../dist/slowsearch-v1.js"></script>
 <script src="../dist/slowsearch-v2.js"></script>
 <script src="../dist/slowsearch-v3.js"></script>
+<script src="../dist/slowsearch-v4.js"></script-->
+<script src="../dist/slowsearch-v5.js"></script>
+<script src="../dist/slowsearch-v6.js"></script>
 <script src="enwiki-articles.js"></script>
 <script>
 /* eslint-env browser es6 */
@@ -18,7 +21,7 @@ function test(version, count) {
   const promises = [];
   //let lastFinish = Date.now();
   const storedIndex = indexMap.get(version) || 0;
-  if (version === 3) {
+  if (version >= 3) {
     const documents = [];
     for (let i = storedIndex; i < storedIndex + count && i < texts.length; i++) {
       documents.push({text: texts[i]});
@@ -41,6 +44,8 @@ function test(version, count) {
     timings.push(duration);
     timingMap.set(version, timings);
     console.log('done with slowsearch v' + version, duration);
+  }).catch(e => {
+    console.log('error with slowsearch v' + version, e);
   });
 }
 
@@ -58,11 +63,17 @@ function createTestButton(text, func) {
 createTestButton('Run v1 for 10 docs', () => test(1));
 createTestButton('Run v2 for 10 docs', () => test(2));
 createTestButton('Run v3 for 10 docs', () => test(3));
+createTestButton('Run v4 for 10 docs', () => test(4));
+createTestButton('Run v5 for 10 docs', () => test(5));
+createTestButton('Run v6 for 10 docs', () => test(6));
 //createTestButton('Run both', () => test(1).then(test(2)));
 document.body.appendChild(document.createElement('br'));
 createTestButton('Drop database v1', () => drop(1));
 createTestButton('Drop database v2', () => drop(2));
 createTestButton('Drop database v3', () => drop(3));
+createTestButton('Drop database v4', () => drop(4));
+createTestButton('Drop database v5', () => drop(5));
+createTestButton('Drop database v6', () => drop(6));
 </script>
 <br>
 Open your console for output.<br>

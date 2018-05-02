@@ -1,10 +1,10 @@
 Slowsearch
 
-!(https://paper.treora.com/0/page62.svg)
+![](https://paper.treora.com/0/page62.svg)
 
-!(https://paper.treora.com/0/page63.svg)
+![](https://paper.treora.com/0/page63.svg)
 
-!(https://paper.treora.com/0/page64.svg)
+![](https://paper.treora.com/0/page64.svg)
 
 # Definitions
 

@@ -8,7 +8,7 @@ import eslint from 'rollup-plugin-eslint';
 
 const plugins = [
   eslint(),
-  babel({
+  /*babel({
     babelrc: false,
     presets: [
       'es2015-rollup'
@@ -16,24 +16,24 @@ const plugins = [
     plugins: [
       'transform-regenerator',
       'transform-runtime'
-      /*["transform-runtime", {
-        "helpers": false,
-        "polyfill": false,
-        "regenerator": true,
-        "moduleName": "rollup-regenerator-runtime"
-      }]*/
+      // ["transform-runtime", {
+      //   "helpers": false,
+      //   "polyfill": false,
+      //   "regenerator": true,
+      //   "moduleName": "rollup-regenerator-runtime"
+      // }]
     ],
     exclude: 'node_modules/**',
-    //externalHelpers: true
+    externalHelpers: true
     runtimeHelpers: true
-  }),
+  }),*/
   resolve({
     jsnext: true,
     main: true,
     browser: true
   }),
   commonjs()
- // commonjs({ namedExports: { '/idb.js': [ 'open' ] }})
+  // commonjs({ namedExports: { '/idb.js': [ 'open' ] }})
 ];
 
 const plugins_just_bundle = [

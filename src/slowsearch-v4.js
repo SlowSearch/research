@@ -1,6 +1,6 @@
 import {memoizingStemmer as stemmer} from 'porter-stemmer';
 import {english} from 'stopwords';
-import {default as Promise} from 'es6-promise/lib/es6-promise/promise.js';
+//import {default as Promise} from 'es6-promise/lib/es6-promise/promise.js';
 
 const stopwords = new Set(english);
 const dbName = 'search-v4';
@@ -72,7 +72,8 @@ const termCache = (() => {
       return;
     }
     await new Promise(resolve => {
-      transaction.objectStore(dbStoreTerms).openCursor(event => {
+      const request = transaction.objectStore(dbStoreTerms).openCursor();
+      request.onsuccess = event => {
         const cursor = event.target.result;
         if (!cursor) {
           cacheEqualsObjectStore = true;
@@ -80,7 +81,7 @@ const termCache = (() => {
         }
         cache.set(cursor.key, cursor.value);
         cursor.continue();
-      })
+      };
     });
   }
 
@@ -287,9 +288,11 @@ export async function batchAdd(texts, prefill) {
   for (let i = 0; i < texts.length; i++) {
     await add(texts[i], transaction);
   }
-  await new Promise(resolve => {
-    termCache.storeUpdatesToDB(transaction);
-    transaction.onsuccess = () => resolve();
+  termCache.storeUpdatesToDB(transaction);
+  await new Promise((resolve, reject) => {
+    transaction.onerror = reject;
+    transaction.onabort = reject;
+    transaction.oncomplete = resolve;
   });
 }
 
@@ -309,9 +312,11 @@ export async function add(doc, transaction) {
   // transaction.objectStore will error in addIndex
   const uniqueTermCount = await addIndex(transaction, docId, terms);
   if (!batch) {
-    await new Promise(resolve => {
-      termCache.storeUpdatesToDB(transaction);
-      transaction.onsuccess = () => resolve();
+    termCache.storeUpdatesToDB(transaction);
+    await new Promise((resolve, reject) => {
+      transaction.onerror = reject;
+      transaction.onabort = reject;
+      transaction.oncomplete = resolve;
     });
   }
   return uniqueTermCount;

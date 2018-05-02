@@ -1,6 +1,6 @@
 import {memoizingStemmer as stemmer} from 'porter-stemmer';
 import {english} from 'stopwords';
-import {default as Promise} from 'es6-promise/lib/es6-promise/promise.js';
+//import {default as Promise} from 'es6-promise/lib/es6-promise/promise.js';
 
 const stopwords = new Set(english);
 const dbName = 'search-v5';
@@ -73,7 +73,8 @@ const termCache = (() => {
       if (cacheEqualsObjectStore) {
         return resolve();
       }
-      transaction.objectStore(dbStoreTerms).openCursor(event => {
+      const request = transaction.objectStore(dbStoreTerms).openCursor();
+      request.onsuccess = event => {
         const cursor = event.target.result;
         if (!cursor) {
           cacheEqualsObjectStore = true;
@@ -81,7 +82,7 @@ const termCache = (() => {
         }
         cache.set(cursor.key, cursor.value);
         cursor.continue();
-      })
+      };
     });
   }
 
@@ -311,7 +312,7 @@ export function batchAdd(texts, prefill) {
     }
     return new Promise((resolve, reject) => {
       termCache.storeUpdatesToDB(transaction);
-      transaction.onsuccess = resolve;
+      transaction.oncomplete = resolve;
       transaction.onerror = reject;
     });
   });

@@ -63,7 +63,8 @@ const termCache = (() => {
     if (cacheEqualsObjectStore) {
       return callback();
     }
-    transaction.objectStore(dbStoreTerms).openCursor(event => {
+    const request = transaction.objectStore(dbStoreTerms).openCursor();
+    request.onsuccess = event => {
       const cursor = event.target.result;
       if (!cursor) {
         cacheEqualsObjectStore = true;
@@ -71,7 +72,7 @@ const termCache = (() => {
       }
       cache.set(cursor.key, cursor.value);
       cursor.continue();
-    });
+    };
   }
 
   function getIdAndIncreaseDf(transaction, term, callback) {

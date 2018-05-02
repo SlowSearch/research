@@ -1,6 +1,6 @@
 import {memoizingStemmer as stemmer} from 'porter-stemmer';
 import {english} from 'stopwords';
-//import {default as Promise} from 'es6-promise/lib/es6-promise/promise.js';
+import {default as Promise} from 'es6-promise/lib/es6-promise/promise.js';
 
 const stopwords = new Set(english);
 const dbName = 'search-v5';
@@ -255,7 +255,7 @@ function getTermCount(transaction) {
   });
 }
 
-function query(term, limit) {
+function query(term, limit = 10) {
   let termObj, docCount, transaction;
   const documents = [];
   return db().then(dbval => {
@@ -271,9 +271,10 @@ function query(term, limit) {
       if (!termObj) {
         return resolve({idf: 0, total: 0, documents: []});
       }
-      transaction.objectStore(dbStoreIndex).openCursor(getBound(termObj.id), 'prev', event => {
+      const request = transaction.objectStore(dbStoreIndex).openCursor(getBound(termObj.id), 'prev');
+      request.onsuccess = event => {
         const cursor = event.target.result;
-        if (cursor && documents.length < (limit || 10)) {
+        if (cursor && documents.length < limit) {
           documents.push(getTfDocId(cursor.key));
           cursor.continue();
         } else {
@@ -283,7 +284,7 @@ function query(term, limit) {
             documents
           });
         }
-      });
+      };
     });
   });
 }

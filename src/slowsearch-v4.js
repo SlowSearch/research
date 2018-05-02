@@ -243,7 +243,7 @@ async function getTermCount(transaction) {
  return count;
 }
 
-async function query(term, limit) {
+async function query(term, limit = 10) {
   const documents = [];
   const transaction = (await db()).transaction([dbStoreIndex, dbStoreDocs, dbStoreTerms], dbRO);
   const termObj = await termCache.get(transaction, term);
@@ -253,9 +253,10 @@ async function query(term, limit) {
   const docCount = await getDocCount(transaction);
   // Since large tf's are stored as high numbers, we can only early stop when we walk in reverse (prev) order.
   const result = await new Promise(resolve => {
-    transaction.objectStore(dbStoreIndex).openCursor(getBound(termObj.id), 'prev', event => {
+    const request = transaction.objectStore(dbStoreIndex).openCursor(getBound(termObj.id), 'prev');
+    request.onsuccess = event => {
       const cursor = event.target.result;
-      if (cursor && documents.length < (limit || 10)) {
+      if (cursor && documents.length < limit) {
         documents.push(getTfDocId(cursor.key));
         cursor.continue();
       } else {
@@ -265,7 +266,7 @@ async function query(term, limit) {
           documents
         });
       }
-    });
+    };
   });
   return result;
 }

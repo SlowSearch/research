@@ -1,11 +1,5 @@
 # Slowsearch
 
-Paper documentation:
-
-![](https://paper.treora.com/0/page62.svg | width=200)
-![](https://paper.treora.com/0/page63.svg | width=200)
-![](https://paper.treora.com/0/page64.svg | width=200)
-
 ## Definitions
 
 tf is relative for the document (so 0-1)
@@ -76,3 +70,9 @@ Con:
 The `idb` library adds promises for our store put/add (update and inserts) that we don't care about, since we already have the transaction oncomplete.
 
 Replacing native Promise with the `es6-promise` implementation seems to give quite a performance boost.
+
+## Paper documentation:
+
+![](https://paper.treora.com/0/page62.svg)
+![](https://paper.treora.com/0/page63.svg)
+![](https://paper.treora.com/0/page64.svg)

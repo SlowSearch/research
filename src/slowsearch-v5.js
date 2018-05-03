@@ -299,7 +299,7 @@ function tokenize(text) {
   return tokens;
 }
 
-export function batchAdd(texts, prefill) {
+export function batchAdd(texts, prefill = true) {
   let transaction;
   return db().then(dbval => {
     transaction = dbval.transaction([dbStoreIndex, dbStoreDocs, dbStoreTerms], dbRW);
@@ -313,13 +313,13 @@ export function batchAdd(texts, prefill) {
       tasks.push(addInternal(texts[i], transaction));
     }
     return Promise.all(tasks);
-  }).then(() =>
-    new Promise((resolve, reject) => {
-      termCache.storeUpdatesToDB(transaction);
+  }).then(() => {
+    termCache.storeUpdatesToDB(transaction);
+    return new Promise((resolve, reject) => {
       transaction.oncomplete = resolve;
       transaction.onerror = reject;
-    })
-  );
+    });
+  });
 }
 
 // Can add a document with {text: string, [id: Number]}, where id should be unique

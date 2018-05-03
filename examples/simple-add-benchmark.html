@@ -19,26 +19,21 @@ function test(version, count = 10) {
   status(version, 'indexing...');
   const start = Date.now();
   const searchFunc = window['slowsearch_v' + version];
-  const promises = [];
+  let promises = [];
   //let lastFinish = Date.now();
   const storedIndex = indexMap.get(version) || 0;
+  const docs = texts.slice(storedIndex, storedIndex + count).map(s => {return {text: s};});
+  indexMap.set(version, storedIndex + count);
   if (version >= 3) {
-    const documents = [];
-    for (let i = storedIndex; i < storedIndex + count && i < texts.length; i++) {
-      documents.push({text: texts[i]});
-    }
-    promises.push(searchFunc.batchAdd(documents, true));
+    promises.push(searchFunc.batchAdd(docs));
   } else {
-    for (let i = storedIndex; i < storedIndex + count && i < texts.length; i++) {
-      promises.push(searchFunc.add({text: texts[i]}));
+    promises = docs.map(doc => searchFunc.add(doc));
     //.then(event => {
       //console.log('promise done for text', i, '; uniqueTerms: ', event.uniqueTerms, '; internal time (since promise create): ', event.time, '; relative time since last promise: ', (Date.now() - lastFinish) + ' ms', '; relative time per uniqueTerm: ', ((Date.now() - lastFinish) / event.uniqueTerms) + ' ms');
       //lastFinish = Date.now();
     //}));
     //console.log('added promise for text ', i);
-    }
   }
-  indexMap.set(version, storedIndex + count);
   return Promise.all(promises).then(() => {
     const duration = Date.now() - start;
     const timings = (timingMap.get(version) || []);

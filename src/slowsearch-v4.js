@@ -280,17 +280,13 @@ function tokenize(text) {
   return tokens;
 }
 
-export async function batchAdd(texts, prefill) {
+export async function batchAdd(texts, prefill = true) {
   const transaction = (await db()).transaction([dbStoreIndex, dbStoreDocs, dbStoreTerms], dbRW);
   if (prefill) {
     await termCache.prefill(transaction);
   }
-  const tasks = [];
-  for (let i = 0; i < texts.length; i++) {
-    tasks.push(add(texts[i], transaction));
-  }
   // we have to wait for all the tasks to finish before finalizing a batch write of all terms
-  await Promise.all(tasks);
+  await Promise.all(texts.map(text => add(text, transaction)));
   termCache.storeUpdatesToDB(transaction);
   await new Promise((resolve, reject) => {
     transaction.onerror = reject;

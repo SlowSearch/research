@@ -252,7 +252,7 @@ function tokenize(text) {
   return tokens;
 }
 
-export async function batchAdd(texts, prefill) {
+export async function batchAdd(texts, prefill = true) {
   const transaction = (await db()).transaction([dbStoreIndex, dbStoreDocs, dbStoreTerms], dbRW);
   if (prefill) {
     termCache.prefill(transaction);

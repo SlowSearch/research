@@ -274,7 +274,7 @@ function tokenize(text) {
   return tokens;
 }
 
-export function batchAdd(texts, prefill, callback) {
+export function batchAdd(texts, prefill = true, callback) {
   db((dbval) => {
     const transaction = dbval.transaction([dbStoreIndex, dbStoreDocs, dbStoreTerms], dbRW);
     const innerCallback = () => {

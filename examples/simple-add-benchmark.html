@@ -12,6 +12,7 @@
 /* eslint-env browser es6 */
 /* global texts:false */
 /* eslint-disable no-console */
+const batchSize = 100;
 const docCounts = new Map();
 const timings = new Map();
 const setText = (version, text, className = 'status', title) => {
@@ -24,9 +25,9 @@ const setText = (version, text, className = 'status', title) => {
 const updateDocSize = version => setText(version, '' + docCounts.get(version) + ' docs', 'docsize');
 const updateIndexTime = version => {
   const t = timings.get(version).reduce((a, b) => a + b, 0);
-  setText(version, 'total ' + t  + 'ms for ' + (timings.get(version).length * 10) + (timings.get(version).length > 1 ? ' (avg ' + Math.round(t / timings.get(version).length) + 'ms per 10)' : ''), 'indextime', JSON.stringify(timings.get(version)));
+  setText(version, 'total ' + t  + 'ms for ' + (timings.get(version).length * batchSize) + (timings.get(version).length > 1 ? ' (avg ' + Math.round(t / timings.get(version).length) + 'ms per ' + batchSize + ')' : ''), 'indextime', JSON.stringify(timings.get(version)));
 };
-async function test(version, count = 10) {
+async function test(version, count = batchSize) {
   setText(version, 'indexing...');
   const start = Date.now();
   const slowSearch = window['slowsearch_v' + version];
@@ -110,7 +111,7 @@ function createSpan(className) {
   const div = document.createElement('div');
   div.id = 'v' + v;
   div.textContent = 'V' + v + ': ';
-  div.appendChild(createTestButton('Run (10 docs)', () => test(v)));
+  div.appendChild(createTestButton('Run (' + batchSize + ' docs)', () => test(v)));
   div.appendChild(createTestButton('Drop DB', () => drop(v)));
   div.appendChild(createTestButton('Query', () => query(v)));
   div.appendChild(createSpan('docsize'));

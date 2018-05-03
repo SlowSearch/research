@@ -179,23 +179,23 @@ const getScaledBm15 = (termCount, docSize) => Math.floor(255 * ((termCount / doc
 // we can change this limit to 1 << 24 (16M+) again.
 
 
-// Fetch a tf and docId as object from a key (Number)
-function getTfDocId(key) {
+// Fetch a score and docId as object from a key (Number)
+function getScoreDocId(key) {
   const dv = new DataView(new ArrayBuffer(8));
   dv.setFloat64(0, key);
   return {
-    tf: dv.getUint8(3),
+    score: dv.getUint8(3),
     docId: dv.getUint32(4)
   };
 }
 
-// Create a key (Number) from a termId, tf and docId
-function getKey(termId, tf, docId) {
+// Create a key (Number) from a termId, score and docId
+function getKey(termId, score, docId) {
   const dv = new DataView(new ArrayBuffer(8));
-  if (termId < 0 || tf < 0 || docId < 0 || termId >= 1 << 23 || tf >= 1 << 8 || docId >= (1 << 30) * 4) {
+  if (termId < 0 || score < 0 || docId < 0 || termId >= 1 << 23 || score >= 1 << 8 || docId >= (1 << 30) * 4) {
     throw Error('getKey out of bound');
   }
-  dv.setUint32(0, termId << 8 | tf);
+  dv.setUint32(0, termId << 8 | score);
   dv.setUint32(4, docId);
   return dv.getFloat64(0);
 }
@@ -275,7 +275,7 @@ function query(term, limit = 10) {
       request.onsuccess = event => {
         const cursor = event.target.result;
         if (cursor && documents.length < limit) {
-          documents.push(getTfDocId(cursor.key));
+          documents.push(getScoreDocId(cursor.key));
           cursor.continue();
         } else {
           resolve({
@@ -308,15 +308,18 @@ export function batchAdd(texts, prefill) {
     }
     return;
   }).then(() => {
+    const tasks = [];
     for (let i = 0; i < texts.length; i++) {
-      addInternal(texts[i], transaction);
+      tasks.push(addInternal(texts[i], transaction));
     }
-    return new Promise((resolve, reject) => {
+    return Promise.all(tasks);
+  }).then(() =>
+    new Promise((resolve, reject) => {
       termCache.storeUpdatesToDB(transaction);
       transaction.oncomplete = resolve;
       transaction.onerror = reject;
-    });
-  });
+    })
+  );
 }
 
 // Can add a document with {text: string, [id: Number]}, where id should be unique

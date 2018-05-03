@@ -71,7 +71,7 @@ function dbAddIndex(docId, terms, start) {
         let tf = count / terms.length;
         request.onsuccess = event => {
           if (event.target.result) {
-            event.target.result.push({id: docId.id, tf: tf});
+            event.target.result.push({id: docId, tf: tf});
             store.put(event.target.result, term);
           } else {
             store.add([{id: docId, tf: tf}], term);
@@ -101,7 +101,7 @@ function dbGetDocCount(transaction) {
   });
 }
 
-function dbQuery(term, limit, start) {
+function dbQuery(term, limit = 10, start) {
   return dbOpen(dbName)
   .then(() => {
     return new Promise((resolve, reject) => {
@@ -109,14 +109,14 @@ function dbQuery(term, limit, start) {
       transaction.onerror = event => reject('transaction error when reading index', event);
       let request = transaction.objectStore(dbStoreIndex).get(term);
       request.onsuccess = event => {
-        let results = event.target.result;
+        let documents = event.target.result || [];
         // inverse sort on tf (large = index 0)
-        results.sort((a, b) => b.tf - a.tf);
+        documents.sort((a, b) => b.tf - a.tf);
         dbGetDocCount(transaction)
         .then(() => resolve({
-          idf: idf(docCount, results.length),
-          total: results.length,
-          results: results.splice(0, limit || 10),
+          idf: idf(docCount, documents.length),
+          total: documents.length,
+          documents: documents.splice(0, limit),
           time: Date.now() - start
         }))
         .catch(event => reject(event));

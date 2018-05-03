@@ -163,24 +163,23 @@ const getScaledBm15 = (termCount, docSize) => Math.floor(255 * ((termCount / doc
 // that is why we changed our limit testing to 1 << 23 (8M+), if we fix this sorting case (is inverting the score bits? when negative enough?)
 // we can change this limit to 1 << 24 (16M+) again.
 
-
-// Fetch a tf and docId as object from a key (Number)
-function getTfDocId(key) {
+// Fetch a score and docId as object from a key (Number)
+function getScoreDocId(key) {
   const dv = new DataView(new ArrayBuffer(8));
   dv.setFloat64(0, key);
   return {
-    tf: dv.getUint8(3),
+    score: dv.getUint8(3),
     docId: dv.getUint32(4)
   };
 }
 
-// Create a key (Number) from a termId, tf and docId
-function getKey(termId, tf, docId) {
+// Create a key (Number) from a termId, score and docId
+function getKey(termId, score, docId) {
   const dv = new DataView(new ArrayBuffer(8));
-  if (termId < 0 || tf < 0 || docId < 0 || termId >= 1 << 23 || tf >= 1 << 8 || docId >= (1 << 30) * 4) {
+  if (termId < 0 || score < 0 || docId < 0 || termId >= 1 << 23 || score >= 1 << 8 || docId >= (1 << 30) * 4) {
     throw Error('getKey out of bound');
   }
-  dv.setUint32(0, termId << 8 | tf);
+  dv.setUint32(0, termId << 8 | score);
   dv.setUint32(4, docId);
   return dv.getFloat64(0);
 }
@@ -257,7 +256,7 @@ async function query(term, limit = 10) {
     request.onsuccess = event => {
       const cursor = event.target.result;
       if (cursor && documents.length < limit) {
-        documents.push(getTfDocId(cursor.key));
+        documents.push(getScoreDocId(cursor.key));
         cursor.continue();
       } else {
         resolve({
@@ -286,9 +285,12 @@ export async function batchAdd(texts, prefill) {
   if (prefill) {
     await termCache.prefill(transaction);
   }
+  const tasks = [];
   for (let i = 0; i < texts.length; i++) {
-    await add(texts[i], transaction);
+    tasks.push(add(texts[i], transaction));
   }
+  // we have to wait for all the tasks to finish before finalizing a batch write of all terms
+  await Promise.all(tasks);
   termCache.storeUpdatesToDB(transaction);
   await new Promise((resolve, reject) => {
     transaction.onerror = reject;

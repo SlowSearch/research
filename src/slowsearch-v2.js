@@ -94,27 +94,27 @@ function dbGetDocCount(transaction) {
   });
 }
 
-function dbQuery(term, limit, start) {
+function dbQuery(term, limit = 10, start) {
   return dbOpen(dbName)
   .then(() => {
     return new Promise((resolve, reject) => {
-      let results = [];
+      let documents = [];
       let transaction = db.transaction([dbStoreIndex, dbStoreDocs], dbRO);
       transaction.onerror = event => reject('transaction error when reading index', event);
       let request = transaction.objectStore(dbStoreIndex).index(dbIndexQuery).openCursor(IDBKeyRange.only(term));
       request.onsuccess = event => {
         let cursor = event.target.result;
         if (cursor) {
-          results.push(cursor.value);
+          documents.push(cursor.value);
           cursor.continue();
         } else {
           // inverse sort on tf (large = index 0)
-          results.sort((a, b) => b.tf - a.tf);
+          documents.sort((a, b) => b.tf - a.tf);
           dbGetDocCount(transaction)
           .then(() => resolve({
-            idf: idf(docCount, results.length),
-            total: results.length,
-            results: results.splice(0, limit || 10),
+            idf: idf(docCount, documents.length),
+            total: documents.length,
+            documents: documents.splice(0, limit),
             time: Date.now() - start
           }))
           .catch(event => reject(event));

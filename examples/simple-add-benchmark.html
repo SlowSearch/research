@@ -14,8 +14,9 @@
 /* eslint-disable no-console */
 const indexMap = new Map();
 const timingMap = new Map();
-function test(version, count) {
-  count = count || 10;
+const status = (version, text) => document.querySelector('#v' + version + ' .status').textContent = text;
+function test(version, count = 10) {
+  status(version, 'indexing...');
   const start = Date.now();
   const searchFunc = window['slowsearch_v' + version];
   const promises = [];
@@ -44,36 +45,56 @@ function test(version, count) {
     timings.push(duration);
     timingMap.set(version, timings);
     console.log('done with slowsearch v' + version, duration);
+    status(version, 'index duration = ' + duration);
   }).catch(e => {
     console.log('error with slowsearch v' + version, e);
+    status(version, 'index error ' + JSON.stringify(e));
   });
 }
 
 function drop(version) {
+  status(version, 'dropping database...');
   const request = indexedDB.deleteDatabase('search-v' + version);
-  request.onsuccess = () => console.log('database v' + version + ' deleted');
-  request.onerror = (event) => console.log('database v' + version + ' delete error', event);
+  request.onsuccess = () => {
+    console.log('database v' + version + ' deleted');
+    status(version, 'dropped DB');
+  };
+  request.onerror = (event) => {
+    console.log('database v' + version + ' delete error', event);
+    status(version, 'error dropping DB');
+  }
+}
+function query(version, word = 'light') {
+  status(version, 'searching...');
+  const start = Date.now();
+  const searchFunc = window['slowsearch_v' + version];
+  searchFunc.searchSingleWord(word)
+  .then(
+    results => {
+      const duration = Date.now() - start;
+      console.log('query slowsearch v' + version + ' for "' + word + '"', duration, results);
+      status(version, 'query time ' + duration + ' and ' + results.total + ' results (of which ' + results.documents.length + ' in result)');
+  });
 }
 function createTestButton(text, func) {
   const btn = document.createElement('button');
   btn.textContent = text;
   btn.onclick = func;
-  document.body.appendChild(btn);
+  return btn;
 }
-createTestButton('Run v1 for 10 docs', () => test(1));
-createTestButton('Run v2 for 10 docs', () => test(2));
-createTestButton('Run v3 for 10 docs', () => test(3));
-createTestButton('Run v4 for 10 docs', () => test(4));
-createTestButton('Run v5 for 10 docs', () => test(5));
-createTestButton('Run v6 for 10 docs', () => test(6));
-//createTestButton('Run both', () => test(1).then(test(2)));
-document.body.appendChild(document.createElement('br'));
-createTestButton('Drop database v1', () => drop(1));
-createTestButton('Drop database v2', () => drop(2));
-createTestButton('Drop database v3', () => drop(3));
-createTestButton('Drop database v4', () => drop(4));
-createTestButton('Drop database v5', () => drop(5));
-createTestButton('Drop database v6', () => drop(6));
+[1,2,3,4,5,6].map(v => {
+  const div = document.createElement('div');
+  div.id = 'v' + v;
+  div.textContent = 'V' + v + ': ';
+  div.appendChild(createTestButton('Run (10 docs)', () => test(v)));
+  div.appendChild(createTestButton('Drop DB', () => drop(v)));
+  div.appendChild(createTestButton('Query', () => query(v)));
+  const span = document.createElement('span');
+  span.style.marginLeft = '0.5rem';
+  span.className = 'status';
+  div.appendChild(span);
+  document.body.appendChild(div);
+});
 </script>
 <br>
 Open your console for output.<br>

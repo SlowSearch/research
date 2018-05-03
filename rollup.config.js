@@ -1,42 +1,9 @@
-import babel from 'rollup-plugin-babel';
 import commonjs from 'rollup-plugin-commonjs';
 import resolve from 'rollup-plugin-node-resolve';
 import eslint from 'rollup-plugin-eslint';
 
-//const pkg = require('./package.json');
-//const external = Object.keys(pkg.dependencies || {});
-
+// just bundle the stuff:
 const plugins = [
-  eslint(),
-  /*babel({
-    babelrc: false,
-    presets: [
-      'es2015-rollup'
-    ],
-    plugins: [
-      'transform-regenerator',
-      'transform-runtime'
-      // ["transform-runtime", {
-      //   "helpers": false,
-      //   "polyfill": false,
-      //   "regenerator": true,
-      //   "moduleName": "rollup-regenerator-runtime"
-      // }]
-    ],
-    exclude: 'node_modules/**',
-    externalHelpers: true
-    runtimeHelpers: true
-  }),*/
-  resolve({
-    jsnext: true,
-    main: true,
-    browser: true
-  }),
-  commonjs()
-  // commonjs({ namedExports: { '/idb.js': [ 'open' ] }})
-];
-
-const plugins_just_bundle = [
   eslint(),
   resolve({
     jsnext: true,
@@ -84,7 +51,7 @@ export default [{
   }]
 }, {
   entry: 'src/slowsearch-v5.js',
-  plugins: plugins_just_bundle,
+  plugins: plugins,
   targets: [{
     dest: 'dist/slowsearch-v5.js',
     format: 'umd',
@@ -93,7 +60,7 @@ export default [{
   }]
 }, {
   entry: 'src/slowsearch-v6.js',
-  plugins: plugins_just_bundle,
+  plugins: plugins,
   targets: [{
     dest: 'dist/slowsearch-v6.js',
     format: 'umd',

@@ -20,7 +20,7 @@ async function db() {
     return _db;
   }
   _db = await idbOpen(dbName, 1, upgradedb => {
-    upgradedb.createObjectStore(dbStoreIndex, {autoIncrement: true});
+    upgradedb.createObjectStore(dbStoreIndex);
     upgradedb.createObjectStore(dbStoreDocs, {autoIncrement: true});
     upgradedb.createObjectStore(dbStoreTerms);
   });
@@ -146,23 +146,23 @@ const getScaledBm15 = (termCount, docSize) => Math.floor(255 * ((termCount / doc
 // we can change this limit to 1 << 24 (16M+) again.
 
 
-// Fetch a tf and docId as object from a key (Number)
-function getTfDocId(key) {
+// Fetch a score and docId as object from a key (Number)
+function getScoreDocId(key) {
   const dv = new DataView(new ArrayBuffer(8));
   dv.setFloat64(0, key);
   return {
-    tf: dv.getUint8(3),
+    score: dv.getUint8(3),
     docId: dv.getUint32(4)
   };
 }
 
-// Create a key (Number) from a termId, tf and docId
-function getKey(termId, tf, docId) {
+// Create a key (Number) from a termId, score and docId
+function getKey(termId, score, docId) {
   const dv = new DataView(new ArrayBuffer(8));
-  if (termId < 0 || tf < 0 || docId < 0 || termId >= 1 << 23 || tf >= 1 << 8 || docId >= (1 << 30) * 4) {
+  if (termId < 0 || score < 0 || docId < 0 || termId >= 1 << 23 || score >= 1 << 8 || docId >= (1 << 30) * 4) {
     throw Error('getKey out of bound');
   }
-  dv.setUint32(0, termId << 8 | tf);
+  dv.setUint32(0, termId << 8 | score);
   dv.setUint32(4, docId);
   return dv.getFloat64(0);
 }
@@ -217,7 +217,7 @@ async function getTermCount(transaction) {
  return count;
 }
 
-async function query(term, limit) {
+async function query(term, limit = 10) {
   const documents = [];
   const transaction = (await db()).transaction([dbStoreIndex, dbStoreDocs, dbStoreTerms], dbRO);
   const termObj = await termCache.get(transaction, term);
@@ -228,8 +228,8 @@ async function query(term, limit) {
   // Since large tf's are stored as high numbers, we can only early stop when we walk in reverse (prev) order.
   let result;
   transaction.objectStore(dbStoreIndex).iterateCursor(getBound(termObj.id), 'prev', cursor => {
-    if (cursor && documents.length < (limit || 10)) {
-      documents.push(getTfDocId(cursor.key));
+    if (cursor && documents.length < limit) {
+      documents.push(getScoreDocId(cursor.key));
       cursor.continue();
     } else {
       result = {

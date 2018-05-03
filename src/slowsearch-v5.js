@@ -321,7 +321,7 @@ export function batchAdd(texts, prefill = true) {
     }
     return;
   }).then(() =>
-    Promise.all(texts.map(text => add(text, transaction)))
+    Promise.all(texts.map(text => addInternal(text, transaction)))
   ).then(() => {
     termCache.storeUpdatesToDB(transaction);
     return new Promise((resolve, reject) => {

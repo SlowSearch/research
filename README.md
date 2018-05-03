@@ -2,7 +2,9 @@
 
 Paper documentation:
 
-![](https://paper.treora.com/0/page62.svg =250x)![](https://paper.treora.com/0/page63.svg =250x)![](https://paper.treora.com/0/page64.svg =250x)
+![](https://paper.treora.com/0/page62.svg | width=200)
+![](https://paper.treora.com/0/page63.svg | width=200)
+![](https://paper.treora.com/0/page64.svg | width=200)
 
 ## Definitions
 

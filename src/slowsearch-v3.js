@@ -27,6 +27,13 @@ async function db() {
   return _db;
 }
 
+export function close() {
+  if (_db) {
+    _db.close();
+    _db = null;
+  }
+}
+
 async function addDocRef(transaction, doc) {
   const docId = await transaction.objectStore(dbStoreDocs).add(doc.text.substring(0, 64), doc.id);
   return docId;
@@ -250,6 +257,10 @@ function tokenize(text) {
     tokens.pop();
   }
   return tokens;
+}
+
+export async function documentCount() {
+  return getDocCount((await db()).transaction([dbStoreDocs], dbRO));
 }
 
 export async function batchAdd(texts, prefill = true) {

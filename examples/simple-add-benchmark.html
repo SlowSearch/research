@@ -12,64 +12,85 @@
 /* eslint-env browser es6 */
 /* global texts:false */
 /* eslint-disable no-console */
-const indexMap = new Map();
-const timingMap = new Map();
-const status = (version, text) => document.querySelector('#v' + version + ' .status').textContent = text;
-function test(version, count = 10) {
-  status(version, 'indexing...');
+const docCounts = new Map();
+const timings = new Map();
+const setText = (version, text, className = 'status', title) => {
+  const span = document.querySelector('#v' + version + ' .' + className);
+  span.textContent = text;
+  if (title) {
+    span.title = title;
+  }
+};
+const updateDocSize = version => setText(version, '' + docCounts.get(version) + ' docs', 'docsize');
+const updateIndexTime = version => {
+  const t = timings.get(version).reduce((a, b) => a + b, 0);
+  setText(version, 'total ' + t  + 'ms for ' + (timings.get(version).length * 10) + (timings.get(version).length > 1 ? ' (avg ' + Math.round(t / timings.get(version).length) + 'ms per 10)' : ''), 'indextime', JSON.stringify(timings.get(version)));
+};
+async function test(version, count = 10) {
+  setText(version, 'indexing...');
   const start = Date.now();
-  const searchFunc = window['slowsearch_v' + version];
-  let promises = [];
+  const slowSearch = window['slowsearch_v' + version];
   //let lastFinish = Date.now();
-  const storedIndex = indexMap.get(version) || 0;
-  const docs = texts.slice(storedIndex, storedIndex + count).map(s => {return {text: s};});
-  indexMap.set(version, storedIndex + count);
-  if (version >= 3) {
-    promises.push(searchFunc.batchAdd(docs));
-  } else {
-    promises = docs.map(doc => searchFunc.add(doc));
+  const docOffset = docCounts.get(version) || 0;
+  const docs = texts.slice(docOffset, docOffset + count).map(s => {return {text: s};});
+  docCounts.set(version, docOffset + count);
+  const promises = version >= 3 ? [slowSearch.batchAdd(docs)] : docs.map(doc => slowSearch.add(doc));
     //.then(event => {
       //console.log('promise done for text', i, '; uniqueTerms: ', event.uniqueTerms, '; internal time (since promise create): ', event.time, '; relative time since last promise: ', (Date.now() - lastFinish) + ' ms', '; relative time per uniqueTerm: ', ((Date.now() - lastFinish) / event.uniqueTerms) + ' ms');
       //lastFinish = Date.now();
     //}));
-    //console.log('added promise for text ', i);
-  }
-  return Promise.all(promises).then(() => {
-    const duration = Date.now() - start;
-    const timings = (timingMap.get(version) || []);
-    timings.push(duration);
-    timingMap.set(version, timings);
-    console.log('done with slowsearch v' + version, duration);
-    status(version, 'index duration = ' + duration);
-  }).catch(e => {
-    console.log('error with slowsearch v' + version, e);
-    status(version, 'index error ' + JSON.stringify(e));
-  });
+  await Promise.all(promises);
+  const duration = Date.now() - start;
+  const timing = timings.get(version);
+  timing.push(duration)
+  timings.set(version, timing);
+  updateDocSize(version);
+  updateIndexTime(version);
+  console.log('done with slowsearch v' + version, duration);
+  setText(version, 'last index duration took ' + duration + 'ms');
+  // }).catch(e => {
+  //   console.log('error with slowsearch v' + version, e);
+  //   setText(version, 'index error ' + JSON.stringify(e));
+  // });
 }
-
+async function init(version) {
+  const slowSearch = window['slowsearch_v' + version];
+  timings.set(version, []);
+  const count = await slowSearch.documentCount();
+  docCounts.set(version, count);
+  updateDocSize(version);
+  updateIndexTime(version);
+}
 function drop(version) {
-  status(version, 'dropping database...');
+  setText(version, 'dropping database...');
+  const slowSearch = window['slowsearch_v' + version];
+  slowSearch.close();
   const request = indexedDB.deleteDatabase('search-v' + version);
+  request.onblocked = () => {
+    console.log('blocked dropping (busy transaction?)');
+    setText(version, 'blocked dropping (busy transaction?)');
+  };
   request.onsuccess = () => {
     console.log('database v' + version + ' deleted');
-    status(version, 'dropped DB');
+    setText(version, 'dropped DB');
+    docCounts.set(version, 0);
+    timings.set(version, []);
+    updateDocSize(version);
+    updateIndexTime(version);
   };
   request.onerror = (event) => {
     console.log('database v' + version + ' delete error', event);
-    status(version, 'error dropping DB');
+    setText(version, 'error dropping DB');
   }
 }
-function query(version, word = 'light') {
-  status(version, 'searching...');
+async function query(version, word = 'light') {
+  setText(version, 'searching...');
   const start = Date.now();
-  const searchFunc = window['slowsearch_v' + version];
-  searchFunc.searchSingleWord(word)
-  .then(
-    results => {
-      const duration = Date.now() - start;
-      console.log('query slowsearch v' + version + ' for "' + word + '"', duration, results);
-      status(version, 'query time ' + duration + ' and ' + results.total + ' results (of which ' + results.documents.length + ' in result)');
-  });
+  const slowSearch = window['slowsearch_v' + version];
+  const results = await slowSearch.searchSingleWord(word);
+  const duration = Date.now() - start;
+  console.log('query slowsearch v' + version + ' for "' + word + '"', duration, results);
+  setText(version, 'query time ' + duration + 'ms and ' + results.total + ' results (of which ' + results.documents.length + ' in result)');
 }
 function createTestButton(text, func) {
   const btn = document.createElement('button');
@@ -77,19 +98,26 @@ function createTestButton(text, func) {
   btn.onclick = func;
   return btn;
 }
-[1,2,3,4,5,6].map(v => {
+function createSpan(className) {
+  const span = document.createElement('span');
+  span.style.marginLeft = '0.5rem';
+  span.className = className;
+  return span;
+}
+
+[1, 2, 3, 4, 5,/* 6*/].map(v => {
+  init(v);
   const div = document.createElement('div');
   div.id = 'v' + v;
   div.textContent = 'V' + v + ': ';
   div.appendChild(createTestButton('Run (10 docs)', () => test(v)));
   div.appendChild(createTestButton('Drop DB', () => drop(v)));
   div.appendChild(createTestButton('Query', () => query(v)));
-  const span = document.createElement('span');
-  span.style.marginLeft = '0.5rem';
-  span.className = 'status';
-  div.appendChild(span);
+  div.appendChild(createSpan('docsize'));
+  div.appendChild(createSpan('indextime'));
+  div.appendChild(createSpan('status'));
   document.body.appendChild(div);
 });
 </script>
 <br>
-Open your console for output.<br>
+Open your console for more output (like search results).

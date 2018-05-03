@@ -31,6 +31,13 @@ function dbOpen(name) {
   });
 }
 
+export function close() {
+  if (db) {
+    db.close();
+    db = null;
+  }
+}
+
 function dbAddDocRef(doc) {
   return dbOpen(dbName)
   .then(() => {
@@ -132,6 +139,10 @@ function tokenize(text) {
     tokens.pop();
   }
   return tokens;
+}
+
+export function documentCount() {
+  return dbOpen(dbName).then(() => dbGetDocCount(db.transaction([dbStoreDocs], dbRO)));
 }
 
 // Can add a document with {text: string, [id: Number]}, where id should be unique

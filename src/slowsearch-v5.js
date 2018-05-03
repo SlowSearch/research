@@ -35,6 +35,13 @@ function db() {
   });
 }
 
+export function close() {
+  if (_db) {
+    _db.close();
+    _db = null;
+  }
+}
+
 function addDocRef(transaction, doc) {
   return new Promise(resolve => {
     let request = transaction.objectStore(dbStoreDocs).add(doc.text.substring(0, 64), doc.id);
@@ -299,6 +306,12 @@ function tokenize(text) {
   return tokens;
 }
 
+export async function documentCount() {
+  return db().then(dbval => 
+    getDocCount(dbval.transaction([dbStoreDocs], dbRO))
+  );
+}
+
 export function batchAdd(texts, prefill = true) {
   let transaction;
   return db().then(dbval => {
@@ -307,13 +320,9 @@ export function batchAdd(texts, prefill = true) {
       return termCache.prefill(transaction);
     }
     return;
-  }).then(() => {
-    const tasks = [];
-    for (let i = 0; i < texts.length; i++) {
-      tasks.push(addInternal(texts[i], transaction));
-    }
-    return Promise.all(tasks);
-  }).then(() => {
+  }).then(() =>
+    Promise.all(texts.map(text => add(text, transaction)))
+  ).then(() => {
     termCache.storeUpdatesToDB(transaction);
     return new Promise((resolve, reject) => {
       transaction.oncomplete = resolve;
